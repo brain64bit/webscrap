@@ -1,5 +1,6 @@
 require 'mechanize'
 require 'awesome_print'
+require 'json'
 
 start_url = "http://indonesia.travel/en/destination/search/"
 @agent = Mechanize.new
@@ -10,35 +11,60 @@ def clean(string)
 	string.gsub(/\n/, "").strip
 end
 
-def asset_download(asset_url, new_name)
-	`wget #{asset_url} -O #{new_name}`
+def parameterize(string)
+	string.downcase.gsub(" ", "_")
 end
 
+def asset_download(asset_url, new_name)
+	extension = File.extname(asset_url)
+	asset_uri = URI.escape(asset_url).gsub("(","%28").gsub(")", "%29")
+	`wget #{asset_uri} -O #{new_name}#{extension} -q`
+end
+
+def json_dump(data)
+	unless File.exist?("#{data[:id]}.json")
+		name = "#{data[:id]}-#{parameterize(data[:poi_states])}"
+		File.open("#{name}.json", "w") do |f|
+			f.write(JSON.pretty_generate(data))
+		end
+		unless Dir.exist?("#{data[:id]}")
+			Dir.mkdir("#{data[:id]}")
+			Dir.chdir("#{data[:id]}")
+			i = 1
+			data[:image_assets].each do |path|
+				asset_download path, i
+				i += 1
+			end
+			Dir.chdir("..")
+		end
+		puts name
+	end
+end
+poi_number = 1
 page.links_with(href:/indonesia.travel\/en\/discover-indonesia\/region-detail\//).uniq(&:text).each do |link|
 	state = link.text
 	current_page, current_page_number = link.click, 1
 	loop do
 		current_page.search(".en-list").each do |tpoi|
 			data = {
-				poi_states: state,
+				id: poi_number,
+				poi_states: state.strip,
 				poi_name: clean(tpoi.at_css(".en-desc-list a").content),
 				poi_url: tpoi.at_css(".en-desc-list a")[:href],
 				poi_thumb: tpoi.at_css("img")[:src]
 			}
-			# puts tpoi.link_with(text:)
-			puts data[:poi_url]
 			detail = @agent.get(data[:poi_url])
 			image_assets = detail.links_with(href:/indonesia.travel\/public\/media\/images\/upload\/poi\/\w/)
 			data[:image_assets] = image_assets.map{|s| s.href }
 			information = {}
 			detail.search(".story").each do |d|
 				title = d.at_css("h2").content
-				puts title
-				puts d.at_css(".fulltext")
-				information.merge!({ title => d.at_css(".fulltext").try(:content) })
+				text = clean(d.at_css(".fulltext").content) rescue ""
+				information.merge!({ parameterize(title) => text })
 			end
 			data[:information] = information
-			ap data
+			json_dump data
+			poi_number += 1
 		end
 		current_page_number += 1
 		next_link = current_page.link_with(text:"#{current_page_number}")
