@@ -10,6 +10,10 @@ def clean(string)
 	string.gsub(/\n/, "").strip
 end
 
+def asset_download(asset_url, new_name)
+	`wget #{asset_url} -O #{new_name}`
+end
+
 page.links_with(href:/indonesia.travel\/en\/discover-indonesia\/region-detail\//).uniq(&:text).each do |link|
 	state = link.text
 	current_page, current_page_number = link.click, 1
@@ -25,8 +29,15 @@ page.links_with(href:/indonesia.travel\/en\/discover-indonesia\/region-detail\//
 			puts data[:poi_url]
 			detail = @agent.get(data[:poi_url])
 			image_assets = detail.links_with(href:/indonesia.travel\/public\/media\/images\/upload\/poi\/\w/)
-			puts image_assets.first
-			data[:image_assets] = image_assets.map{|s| s[:href]}
+			data[:image_assets] = image_assets.map{|s| s.href }
+			information = {}
+			detail.search(".story").each do |d|
+				title = d.at_css("h2").content
+				puts title
+				puts d.at_css(".fulltext")
+				information.merge!({ title => d.at_css(".fulltext").try(:content) })
+			end
+			data[:information] = information
 			ap data
 		end
 		current_page_number += 1
