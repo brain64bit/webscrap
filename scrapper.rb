@@ -1,6 +1,7 @@
 require 'mechanize'
 require 'awesome_print'
 require 'json'
+require 'active_support/core_ext'
 
 start_url = "http://indonesia.travel/en/destination/search/"
 @agent = Mechanize.new
@@ -27,6 +28,8 @@ def json_dump(data)
 		File.open("#{name}.json", "w") do |f|
 			f.write(JSON.pretty_generate(data))
 		end
+
+		#download assets
 		unless Dir.exist?("#{data[:id]}")
 			Dir.mkdir("#{data[:id]}")
 			Dir.chdir("#{data[:id]}")
@@ -37,6 +40,8 @@ def json_dump(data)
 			end
 			Dir.chdir("..")
 		end
+
+		# ap data
 		puts name
 	end
 end
@@ -57,11 +62,18 @@ page.links_with(href:/indonesia.travel\/en\/discover-indonesia\/region-detail\//
 			image_assets = detail.links_with(href:/indonesia.travel\/public\/media\/images\/upload\/poi\/\w/)
 			data[:image_assets] = image_assets.map{|s| s.href }
 			information = {}
-			detail.search(".story").each do |d|
+			detail.search(".story").select{|g| !(g.at_css("img") && g.at_css("img")[:src] =~ /maps.google.com/) }.each do |d|
 				title = d.at_css("h2").content
 				text = clean(d.at_css(".fulltext").content) rescue ""
 				information.merge!({ parameterize(title) => text })
 			end
+
+			map_url = detail.parser.at_css(".story.img_map img")[:src] rescue nil
+			unless map_url.blank?
+				latlon = CGI.parse(URI.parse(map_url).query)["center"].first.split(",") rescue nil
+				data[:poi_lat], data[:poi_lon] = latlon.map(&:to_f) if latlon.present?
+			end
+
 			data[:information] = information
 			json_dump data
 			poi_number += 1
